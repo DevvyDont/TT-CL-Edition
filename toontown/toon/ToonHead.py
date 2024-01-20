@@ -39,7 +39,7 @@ if not base.config.GetBool('want-new-anims', 1):
      'e': '/models/char/koala-heads-',
      'j': '/models/char/kangaroo-heads-',
      'k': '/models/char/kiwi-heads-',
-     'l': '/models/char/armadillo-heads'
+     'l': '/models/char/armadillo-heads-'
     }
 
 elif base.config.GetBool('want-legacy-heads', 1):

@@ -84,7 +84,7 @@ class TTOffLauncher(TTOffLauncherBase):
         return self.gameServer
 
     def getLogFileName(self):
-        return 'ttoff'
+        return 'craneleague'
 
     def parseWebAcctParams(self):
         self.secretNeedsParentPasswordKey = 0

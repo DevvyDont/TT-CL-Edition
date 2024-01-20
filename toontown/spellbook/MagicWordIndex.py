@@ -1766,6 +1766,11 @@ class HitCFO(MagicWord):
 
         boss.magicWordHit(dmg, invoker.doId)
 
+        # this should have been its own command but i'm too lazy for that
+        if boss.wantSafeRushPractice:
+            boss.b_setAttackCode(ToontownGlobals.BossCogDizzyNow)
+            boss.b_setAttackCode(ToontownGlobals.BossCogDizzy)
+
 class rcr(MagicWord):
     desc = "Restarts the crane round"
     execLocation = MagicWordConfig.EXEC_LOC_SERVER

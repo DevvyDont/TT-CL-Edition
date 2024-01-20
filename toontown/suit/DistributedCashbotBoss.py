@@ -385,7 +385,11 @@ class DistributedCashbotBoss(DistributedBossCog.DistributedBossCog, FSM.FSM):
         self.midVault = loader.loadModel('phase_10/models/cogHQ/MidVault.bam')
         self.endVault = loader.loadModel('phase_10/models/cogHQ/EndVault.bam')
         self.lightning = loader.loadModel('phase_10/models/cogHQ/CBLightning.bam')
-        self.magnet = loader.loadModel('phase_10/models/cogHQ/CBMagnet.bam')
+        self.magnet = loader.loadModel('phase_10/models/cogHQ/CBMagnetBlue.bam')
+        self.sideMagnet = loader.loadModel('phase_10/models/cogHQ/CBMagnetRed.bam')
+        if base.config.GetBool('want-legacy-heads'):
+            self.magnet = loader.loadModel('phase_10/models/cogHQ/CBMagnet.bam')
+            self.sideMagnet = loader.loadModel('phase_10/models/cogHQ/CBMagnetRed.bam')
         self.craneArm = loader.loadModel('phase_10/models/cogHQ/CBCraneArm.bam')
         self.controls = loader.loadModel('phase_10/models/cogHQ/CBCraneControls.bam')
         self.stick = loader.loadModel('phase_10/models/cogHQ/CBCraneStick.bam')
