@@ -236,7 +236,6 @@ class DistributedCashbotBossGoon(DistributedGoon.DistributedGoon, DistributedCas
 
     def b_destroyGoon(self):
         if not self.isDead:
-            self.resetSpeedCaching()
             self.d_destroyGoon()
             self.destroyGoon()
 
@@ -259,7 +258,6 @@ class DistributedCashbotBossGoon(DistributedGoon.DistributedGoon, DistributedCas
         DistributedGoon.DistributedGoon.exitOff(self)
 
     def enterWalk(self, avId = None, ts = 0):
-        self.resetSpeedCaching()
         self.startToonDetect()
         self.isStunned = 0
         self.__startWalk()
