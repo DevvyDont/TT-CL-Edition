@@ -638,7 +638,7 @@ class DistributedCashbotBossAI(DistributedBossCogAI.DistributedBossCogAI, FSM.FS
         self.goonMovementTime = globalClock.getFrameTime()
         if side == None:
             if not self.wantOpeningModifications:
-                side = random.choice(['EmergeB', 'EmergeB'])
+                side = random.choice(['EmergeA', 'EmergeB'])
             else:
                 for t in self.involvedToons:
                     avId = t
@@ -683,7 +683,10 @@ class DistributedCashbotBossAI(DistributedBossCogAI.DistributedBossCogAI, FSM.FS
                 else:
                     goon_scale = self.progressRandomValue(self.goonMinScale, self.goonMaxScale, noRandom=self.wantMaxSizeGoons)
             else:
-                goon_scale = self.progressRandomValue(self.goonMinScale, self.goonMaxScale, noRandom=self.wantMaxSizeGoons)
+                if elapsed > 5:
+                    goon_scale = 0.61
+                else:
+                    goon_scale = self.progressRandomValue(self.goonMinScale, self.goonMaxScale, noRandom=self.wantMaxSizeGoons)
 
         print(goon_scale)
         # Apply multipliers if necessary
@@ -1060,6 +1063,7 @@ class DistributedCashbotBossAI(DistributedBossCogAI.DistributedBossCogAI, FSM.FS
             taskMgr.doMethodLater(14.5, self.stunCFO, "stunCFO")
             #taskMgr.doMethodLater(19, self.checkNearbyTwo, "checkNearbyTwo")
         else:
+            taskMgr.doMethodLater(8, self.stunAllGoons, "stompAllGoons")
             pass
 
         # Force unstun the CFO if he was stunned in a previous Battle Three round

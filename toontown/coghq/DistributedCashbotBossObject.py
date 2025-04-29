@@ -32,9 +32,6 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
         self.avId = 0
         self.craneId = 0
         self.cleanedUp = 0
-        
-        # An attribute to cache the last 7 speed for the object
-        self.speeds = []
             
         # A CollisionNode to keep me out of walls and floors, and to
         # keep others from bumping into me.  We use PieBitmask instead
@@ -119,29 +116,9 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
         self.handler.addAgainPattern(self.collideName + '-%in')
         
         self.watchDriftName = self.uniqueName('watchDrift')
-        self.startCacheName = self.uniqueName('startSpeedCaching')
-        self.resetSpeedCaching()
-        
-    def startSpeedCaching(self, task):
-
-        speed = self.physicsObject.getVelocity().length()
-
-        if len(self.speeds) > 6:
-            self.speeds.pop(0)
-        
-        self.speeds.append(speed)
-
-        return Task.again
-        
-    def resetSpeedCaching(self):
-        
-        self.speeds = []
-        taskMgr.remove(self.startCacheName)
 
     def activatePhysics(self):
         if not self.physicsActivated:
-            self.speeds.append(self.physicsObject.getVelocity().length())
-            taskMgr.doMethodLater(0.1, self.startSpeedCaching, self.startCacheName)
             self.boss.physicsMgr.attachPhysicalNode(self.node())
             base.cTrav.addCollider(self.collisionNodePath, self.handler)
             self.physicsActivated = 1
@@ -489,7 +466,6 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
             self.stopSmooth()
 
     def enterFree(self):
-        self.resetSpeedCaching()
         self.avId = 0
         self.craneId = 0
         self.localControl = False
