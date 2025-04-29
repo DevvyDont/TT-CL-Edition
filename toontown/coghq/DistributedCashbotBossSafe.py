@@ -129,7 +129,6 @@ class DistributedCashbotBossSafe(DistributedCashbotBossObject.DistributedCashbot
         self.handler.addAgainPattern(self.collideName + '-%in')
         
         self.watchDriftName = self.uniqueName('watchDrift')
-        self.startCacheName = self.uniqueName('startSpeedCaching')
 
     def getMinImpact(self):
         # This method returns the minimum impact, in feet per second,
