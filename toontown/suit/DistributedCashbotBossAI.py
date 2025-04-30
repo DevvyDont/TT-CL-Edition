@@ -670,12 +670,12 @@ class DistributedCashbotBossAI(DistributedBossCogAI.DistributedBossCogAI, FSM.FS
             print("Elapsed Time: %s" % elapsed)
             if self.wantCraneThreePractice:
                 if elapsed > 5:
-                    goon_scale = 0.61
+                    goon_scale = 0.612
                 else:
                     goon_scale = self.progressRandomValue(self.goonMinScale, self.goonMaxScale, noRandom=self.wantMaxSizeGoons)
             else:
                 if elapsed > 5:
-                    goon_scale = 0.61
+                    goon_scale = 0.612
                 else:
                     goon_scale = self.progressRandomValue(self.goonMinScale, self.goonMaxScale, noRandom=self.wantMaxSizeGoons)
 
