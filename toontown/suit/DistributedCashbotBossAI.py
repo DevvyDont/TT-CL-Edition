@@ -1054,7 +1054,6 @@ class DistributedCashbotBossAI(DistributedBossCogAI.DistributedBossCogAI, FSM.FS
             taskMgr.doMethodLater(14.5, self.stunCFO, "stunCFO")
             #taskMgr.doMethodLater(19, self.checkNearbyTwo, "checkNearbyTwo")
         else:
-            taskMgr.doMethodLater(8, self.stunAllGoons, "stompAllGoons")
             pass
 
         # Force unstun the CFO if he was stunned in a previous Battle Three round
