@@ -117,9 +117,6 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
         
         self.watchDriftName = self.uniqueName('watchDrift')
 
-        # Disable RespectPrevTransform
-        base.cTrav.setRespectPrevTransform(False)
-
     def activatePhysics(self):
         if not self.physicsActivated:
             self.boss.physicsMgr.attachPhysicalNode(self.node())
