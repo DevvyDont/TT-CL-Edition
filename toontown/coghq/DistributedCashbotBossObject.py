@@ -58,6 +58,10 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
         # Cranes will fill in this with the interval to lerp the
         # object to the crane.
         self.lerpInterval = None
+
+        # In __init__(), we initialize an attribute to 
+        # store the object's last pre-collision velocity
+        self.lastVelocity = None
         
         self.setBroadcastStateChanges(True)
         self.accept(self.getStateChangeEvent(), self._doDebug)
@@ -91,6 +95,17 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
         
         self.boss = None
         return
+    
+    # A function that caches the object's velocity
+    def startVelocityCaching(self, task):
+        self.lastVelocity = self.physicsObject.getVelocity()
+        return Task.again
+
+    # A function that stops caching the object's velocity
+    # and resets the last velocity to None
+    def stopVelocityCaching(self):
+        self.lastVelocity = None
+        taskMgr.remove(self.startVelocityCachingName)
 
     def setupPhysics(self, name):
         an = ActorNode('%s-%s' % (name, self.doId))
@@ -117,6 +132,10 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
         
         self.watchDriftName = self.uniqueName('watchDrift')
 
+        # In setupPhysics(), we initialize an attribute to 
+        # store the name of the velocity caching task
+        self.startVelocityCachingName = self.uniqueName('startVelocityCaching')
+
         # Disable RespectPrevTransform
         base.cTrav.setRespectPrevTransform(False)
 
@@ -125,6 +144,11 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
             self.boss.physicsMgr.attachPhysicalNode(self.node())
             base.cTrav.addCollider(self.collisionNodePath, self.handler)
             self.physicsActivated = 1
+
+            # In activatePhysics(),
+            # we start caching the object's velocity
+            taskMgr.add(self.startVelocityCaching, self.startVelocityCachingName)
+
             self.accept(self.collideName + '-floor', self.__hitFloor)
             self.accept(self.collideName + '-goon', self.__hitGoon)
             self.acceptOnce(self.collideName + '-headTarget', self.__hitBoss)
@@ -135,6 +159,11 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
             self.boss.physicsMgr.removePhysicalNode(self.node())
             base.cTrav.removeCollider(self.collisionNodePath)
             self.physicsActivated = 0
+
+            # In deactivatePhysics(),
+            # we stop the velocity caching task
+            self.stopVelocityCaching()
+
             self.ignore(self.collideName + '-floor')
             self.ignore(self.collideName + '-goon')
             self.ignore(self.collideName + '-headTarget')
@@ -172,7 +201,7 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
     def __hitBoss(self, entry):
         if (self.state == 'Dropped' or self.state == 'LocalDropped') and self.craneId != self.boss.doId:
             
-            vel = self.physicsObject.getVelocity()
+            vel = self.lastVelocity
             vel = self.crane.root.getRelativeVector(render, vel)
             vel.normalize()
             impact = vel[1]
