@@ -130,10 +130,6 @@ class DistributedCashbotBossSafe(DistributedCashbotBossObject.DistributedCashbot
         
         self.watchDriftName = self.uniqueName('watchDrift')
 
-        # In setupPhysics(), we initialize an attribute to 
-        # store the name of the velocity caching task
-        self.startVelocityCachingName = self.uniqueName('startVelocityCaching')
-
     def getMinImpact(self):
         # This method returns the minimum impact, in feet per second,
         # with which the object should hit the boss before we bother
