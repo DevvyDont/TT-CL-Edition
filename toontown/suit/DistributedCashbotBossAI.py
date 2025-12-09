@@ -629,7 +629,7 @@ class DistributedCashbotBossAI(DistributedBossCogAI.DistributedBossCogAI, FSM.FS
         self.goonMovementTime = globalClock.getFrameTime()
         if side == None:
             if not self.wantOpeningModifications:
-                side = random.choice(['EmergeA', 'EmergeB'])
+                side = random.choice(['EmergeB', 'EmergeB'])
             else:
                 for t in self.involvedToons:
                     avId = t
@@ -670,12 +670,12 @@ class DistributedCashbotBossAI(DistributedBossCogAI.DistributedBossCogAI, FSM.FS
             print("Elapsed Time: %s" % elapsed)
             if self.wantCraneThreePractice:
                 if elapsed > 5:
-                    goon_scale = 0.61
+                    goon_scale = 0.625
                 else:
                     goon_scale = self.progressRandomValue(self.goonMinScale, self.goonMaxScale, noRandom=self.wantMaxSizeGoons)
             else:
                 if elapsed > 5:
-                    goon_scale = 0.61
+                    goon_scale = 0.615
                 else:
                     goon_scale = self.progressRandomValue(self.goonMinScale, self.goonMaxScale, noRandom=self.wantMaxSizeGoons)
 
