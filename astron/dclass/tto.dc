@@ -1365,7 +1365,7 @@ dclass DistributedCashbotBossSideCrane : DistributedCashbotBossCrane {
 dclass DistributedCashbotBossHeavyCrane : DistributedCashbotBossCrane {
 };
 
-dclass DistributedCashbotBossObject : DistributedObject {
+dclass DistributedCashbotBossObject : DistributedSmoothNode {
   setBossCogId(uint32) required broadcast ram;
   setObjectState(char, uint32, uint32) broadcast ram;
   requestGrab() airecv clsend;
