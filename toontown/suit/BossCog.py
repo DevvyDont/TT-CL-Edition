@@ -483,6 +483,7 @@ class BossCog(Avatar.Avatar):
         self.stars.reparentTo(self.neck)
         base.playSfx(self.birdsSfx, looping=1)
         self.dizzy = dizzy
+        self.flashRed()
 
     def getAngryActorInterval(self, animName, **kw):
         if self.happy:
