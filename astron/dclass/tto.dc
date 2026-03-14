@@ -1349,7 +1349,7 @@ struct LinkPosition {
   int16/100 z;
 };
 
-dclass DistributedCashbotBossCrane : DistributedObject {
+dclass DistributedCashbotBossCrane : DistributedSmoothNode {
   setBossCogId(uint32) required broadcast ram;
   setIndex(uint8) required broadcast ram;
   setState(char, uint32) broadcast ram;
@@ -1365,7 +1365,7 @@ dclass DistributedCashbotBossSideCrane : DistributedCashbotBossCrane {
 dclass DistributedCashbotBossHeavyCrane : DistributedCashbotBossCrane {
 };
 
-dclass DistributedCashbotBossObject : DistributedObject {
+dclass DistributedCashbotBossObject : DistributedSmoothNode {
   setBossCogId(uint32) required broadcast ram;
   setObjectState(char, uint32, uint32) broadcast ram;
   requestGrab() airecv clsend;
