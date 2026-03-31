@@ -205,14 +205,14 @@ ToonReverseSprintSpeed = 15.75 * ToonSpeedFactor
 ToonSprintingFovIncrease = 15
 
 # TTR Movement
-TTRToonForwardSpeed = 20.8
-TTRToonReverseSpeed = 8.4 * ToonSpeedFactor
-TTRToonForwardSprintSpeed = 20.16 * ToonSpeedFactor
+TTRToonForwardSpeed = 20.8 
+TTRToonReverseSpeed = 8.32 * ToonSpeedFactor # 10.4
+TTRToonForwardSprintSpeed = TTRToonForwardSpeed * ToonSpeedFactor # 26.0
 TTRToonRotateSpeed = 93.6
-TTRToonRotateSprintingSpeed = 60 * ToonSpeedFactor
+TTRToonRotateSprintingSpeed = TTRToonRotateSpeed / ToonSpeedFactor # 74.88
 ToonDoubleTapSprintWindow = 0.40
 ToonDoubleTapFovIncrease = 5
-TTRToonReverseSprintSpeed = 15 * ToonSpeedFactor
+TTRToonReverseSprintSpeed = TTRToonReverseSpeed * ToonSpeedFactor
 
 MickeySpeed = 5.0
 MinnieSpeed = 3.2
