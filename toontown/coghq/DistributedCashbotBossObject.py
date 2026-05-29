@@ -43,6 +43,10 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
         self.collisionNodePath = NodePath(self.collisionNode)
         
         self.physicsActivated = 0
+
+        # In __init__(), we initialize an attribute to 
+        # store the object's last pre-collision velocity
+        self.lastVelocity = None
         
         self.toMagnetSoundInterval = Sequence()
         self.hitFloorSoundInterval = Sequence()
@@ -92,6 +96,19 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
         self.boss = None
         return
 
+    # A function that caches the object's velocity
+    def startVelocityCaching(self, task):
+        self.lastVelocity = self.physicsObject.getVelocity()
+        return Task.again
+
+    # A function that stops caching the object's velocity
+    def stopVelocityCaching(self):
+        taskMgr.remove(self.startVelocityCachingName)
+    
+    # A function that resets the object's velocity to None
+    def resetVelocityCaching(self):
+        self.lastVelocity = None
+
     def setupPhysics(self, name):
         an = ActorNode('%s-%s' % (name, self.doId))
         anp = NodePath(an)
@@ -117,11 +134,23 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
         
         self.watchDriftName = self.uniqueName('watchDrift')
 
+        # In setupPhysics(), we initialize an attribute to
+        # store the name of the velocity caching task
+        self.startVelocityCachingName = self.uniqueName('startVelocityCaching')
+
+        # Disable RespectPrevTransform
+        base.cTrav.setRespectPrevTransform(False)
+
     def activatePhysics(self):
         if not self.physicsActivated:
             self.boss.physicsMgr.attachPhysicalNode(self.node())
             base.cTrav.addCollider(self.collisionNodePath, self.handler)
             self.physicsActivated = 1
+
+            # In activatePhysics(),
+            # we start caching the object's velocity
+            taskMgr.add(self.startVelocityCaching, self.startVelocityCachingName)
+
             self.accept(self.collideName + '-floor', self.__hitFloor)
             self.accept(self.collideName + '-goon', self.__hitGoon)
             self.acceptOnce(self.collideName + '-headTarget', self.__hitBoss)
@@ -132,6 +161,11 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
             self.boss.physicsMgr.removePhysicalNode(self.node())
             base.cTrav.removeCollider(self.collisionNodePath)
             self.physicsActivated = 0
+
+            # In deactivatePhysics(),
+            # we stop the velocity caching task
+            self.stopVelocityCaching()
+
             self.ignore(self.collideName + '-floor')
             self.ignore(self.collideName + '-goon')
             self.ignore(self.collideName + '-headTarget')
@@ -168,12 +202,30 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
 
     def __hitBoss(self, entry):
         if (self.state == 'Dropped' or self.state == 'LocalDropped') and self.craneId != self.boss.doId:
+
+            # In __hitBoss(),
+            # we stop the velocity caching task
+            self.stopVelocityCaching()
             
+            # Get pre-collision impact
+            vel = self.lastVelocity
+            vel = self.crane.root.getRelativeVector(render, vel)
+            vel.normalize()
+            precol_impact = vel[1]
+            
+            # Get post-collision impact
             vel = self.physicsObject.getVelocity()
             vel = self.crane.root.getRelativeVector(render, vel)
             vel.normalize()
-            impact = vel[1]
-            print(vel)
+            postcol_impact = vel[1]
+            
+            impact = max(precol_impact, postcol_impact)
+            
+            # In __hitBoss(),
+            # we reset the last velocity to None
+                # after obtaining impact
+            self.resetVelocityCaching()
+
             if impact >= self.getMinImpact():
                 print('hit! %s' % impact)
                 self.hitBossSoundInterval.start()
