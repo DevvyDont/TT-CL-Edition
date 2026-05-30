@@ -98,7 +98,7 @@ class DistributedCashbotBossAI(DistributedBossCogAI.DistributedBossCogAI, FSM.FS
 
         # A dictionary to track last hit times for each toon
         self.lastHitTimes = {}
-        self.hitCooldown = 3.0  # 3 second cooldown
+        self.hitCooldown = CraneLeagueGlobals.CRANE_OBJECT_HIT_COOLDOWN  # 2.5 second cooldown
 
     def d_setToonSpawnpointOrder(self):
         self.sendUpdate('setToonSpawnpoints', [self.toonSpawnpointOrder])
