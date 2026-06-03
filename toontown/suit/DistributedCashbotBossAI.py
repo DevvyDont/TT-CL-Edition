@@ -66,10 +66,11 @@ class DistributedCashbotBossAI(DistributedBossCogAI.DistributedBossCogAI, FSM.FS
         self.wantCraneThreePractice = False
         self.wantSafeSetupPractice = False
         self.wantCraneOnePractice = False
+        self.wantStunGoonAlways = True
         
         # Controlled RNG parameters, True to enable, False to disable
         self.wantOpeningModifications = False
-        self.wantMaxSizeGoons = True
+        self.wantMaxSizeGoons = False
         self.wantLiveGoonPractice = False
         self.wantNoStunning = False
 
@@ -668,16 +669,11 @@ class DistributedCashbotBossAI(DistributedBossCogAI.DistributedBossCogAI, FSM.FS
             goon_strength = int(self.progressRandomValue(self.ruleset.MIN_GOON_DAMAGE, self.ruleset.MAX_GOON_DAMAGE))
             elapsed = globalClock.getFrameTime() - self.battleThreeStart
             print("Elapsed Time: %s" % elapsed)
-            if self.wantCraneThreePractice:
-                if elapsed > 5:
-                    goon_scale = 0.612
-                else:
-                    goon_scale = self.progressRandomValue(self.goonMinScale, self.goonMaxScale, noRandom=self.wantMaxSizeGoons)
-            else:
-                if elapsed > 5:
-                    goon_scale = 0.612
-                else:
-                    goon_scale = self.progressRandomValue(self.goonMinScale, self.goonMaxScale, noRandom=self.wantMaxSizeGoons)
+
+            goon_scale = self.progressRandomValue(self.goonMinScale, self.goonMaxScale, noRandom=self.wantMaxSizeGoons)
+            if self.wantCraneThreePractice or self.wantStunGoonAlways:
+                if elapsed > 5 and elapsed < 20:
+                    goon_scale = 0.61
 
         print(goon_scale)
         # Apply multipliers if necessary
@@ -1054,7 +1050,7 @@ class DistributedCashbotBossAI(DistributedBossCogAI.DistributedBossCogAI, FSM.FS
             taskMgr.doMethodLater(14.5, self.stunCFO, "stunCFO")
             #taskMgr.doMethodLater(19, self.checkNearbyTwo, "checkNearbyTwo")
         else:
-            taskMgr.doMethodLater(8, self.stunAllGoons, "stompAllGoons")
+            #taskMgr.doMethodLater(8, self.stunAllGoons, "stompAllGoons")
             pass
 
         # Force unstun the CFO if he was stunned in a previous Battle Three round
