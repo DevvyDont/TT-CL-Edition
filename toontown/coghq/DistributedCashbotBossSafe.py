@@ -129,10 +129,7 @@ class DistributedCashbotBossSafe(DistributedCashbotBossObject.DistributedCashbot
         self.handler.addAgainPattern(self.collideName + '-%in')
         
         self.watchDriftName = self.uniqueName('watchDrift')
-
-        # In setupPhysics(), we initialize an attribute to 
-        # store the name of the velocity caching task
-        self.startVelocityCachingName = self.uniqueName('startVelocityCaching')
+        self.recordVelName = self.uniqueName('recordVel')
 
     def getMinImpact(self):
         # This method returns the minimum impact, in feet per second,

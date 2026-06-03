@@ -24,6 +24,9 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
     # from SlidingFloor to Free when they stop moving.
     wantsWatchDrift = 1
 
+    # Number of recent frames to determine the pre-collision velocity
+    velocityHistoryLen = 6
+
     def __init__(self, cr):
         DistributedSmoothNode.DistributedSmoothNode.__init__(self, cr)
         FSM.FSM.__init__(self, 'DistributedCashbotBossObject')
@@ -44,10 +47,6 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
         
         self.physicsActivated = 0
 
-        # In __init__(), we initialize an attribute to 
-        # store the object's last pre-collision velocity
-        self.lastVelocity = None
-        
         self.toMagnetSoundInterval = Sequence()
         self.hitFloorSoundInterval = Sequence()
         
@@ -96,19 +95,6 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
         self.boss = None
         return
 
-    # A function that caches the object's velocity
-    def startVelocityCaching(self, task):
-        self.lastVelocity = self.physicsObject.getVelocity()
-        return Task.again
-
-    # A function that stops caching the object's velocity
-    def stopVelocityCaching(self):
-        taskMgr.remove(self.startVelocityCachingName)
-    
-    # A function that resets the object's velocity to None
-    def resetVelocityCaching(self):
-        self.lastVelocity = None
-
     def setupPhysics(self, name):
         an = ActorNode('%s-%s' % (name, self.doId))
         anp = NodePath(an)
@@ -133,10 +119,7 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
         self.handler.addAgainPattern(self.collideName + '-%in')
         
         self.watchDriftName = self.uniqueName('watchDrift')
-
-        # In setupPhysics(), we initialize an attribute to
-        # store the name of the velocity caching task
-        self.startVelocityCachingName = self.uniqueName('startVelocityCaching')
+        self.recordVelName = self.uniqueName('recordVel')
 
         # Disable RespectPrevTransform
         #base.cTrav.setRespectPrevTransform(False)
@@ -147,9 +130,9 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
             base.cTrav.addCollider(self.collisionNodePath, self.handler)
             self.physicsActivated = 1
 
-            # In activatePhysics(),
-            # we start caching the object's velocity
-            taskMgr.add(self.startVelocityCaching, self.startVelocityCachingName)
+            # Cache the velocity history while physics is active.
+            self.velocityHistory = []
+            taskMgr.add(self.__recordVelocity, self.recordVelName)
 
             self.accept(self.collideName + '-floor', self.__hitFloor)
             self.accept(self.collideName + '-goon', self.__hitGoon)
@@ -162,9 +145,7 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
             base.cTrav.removeCollider(self.collisionNodePath)
             self.physicsActivated = 0
 
-            # In deactivatePhysics(),
-            # we stop the velocity caching task
-            self.stopVelocityCaching()
+            taskMgr.remove(self.recordVelName)
 
             self.ignore(self.collideName + '-floor')
             self.ignore(self.collideName + '-goon')
@@ -200,31 +181,46 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
         # dropped on a goon.
         pass
 
+    def __recordVelocity(self, task):
+        # The PhysicsCollisionHandler overwrites the realtime velocity with
+        # a slower, deflected one the instant the object touches the boss, and
+        # this happens BEFORE the headTarget collision event reaches __hitBoss().
+        # Therefore, we must keep track of the velocity before the collision.
+        self.velocityHistory.append(self.physicsObject.getVelocity())
+        if len(self.velocityHistory) > self.velocityHistoryLen:
+            del self.velocityHistory[0]
+        return Task.cont
+
+    def __getApproachVelocity(self):
+        # Return the best pre-collision velocity in the sample. This makes
+        # impact depend on how the object was actually travelling without
+        # also depending on the object's H (heading) value which caused
+        # different post-collision behavior for different H values
+        best = self.physicsObject.getVelocity()
+        bestLenSq = best.lengthSquared()
+        for vel in self.velocityHistory:
+            lenSq = vel.lengthSquared()
+            if lenSq > bestLenSq:
+                best = vel
+                bestLenSq = lenSq
+        return best
+
     def __hitBoss(self, entry):
         if (self.state == 'Dropped' or self.state == 'LocalDropped') and self.craneId != self.boss.doId:
 
-            # In __hitBoss(),
-            # we stop the velocity caching task
-            self.stopVelocityCaching()
-            
-            # Get pre-collision impact
-            vel = self.lastVelocity
+            # Use the pre-col velocity rather than the post-col
+            # velocity. At this point, the PhysicsCollisionHandler has already
+            # replaced the post-col velocity, whose direction depends on
+            # WHERE we struck and the orientation of the object
+            # travelling.
+            vel = self.__getApproachVelocity()
+            # Re-express it in the crane's frame, whose +Y axis points from the
+            # crane out toward the boss.
             vel = self.crane.root.getRelativeVector(render, vel)
+            # Throw away the magnitude so that only the DIRECTION remains.
+            # Impact is how much of that unit direction points at the boss.
             vel.normalize()
-            precol_impact = vel[1]
-            
-            # Get post-collision impact
-            vel = self.physicsObject.getVelocity()
-            vel = self.crane.root.getRelativeVector(render, vel)
-            vel.normalize()
-            postcol_impact = vel[1]
-            
-            impact = max(precol_impact, postcol_impact)
-            
-            # In __hitBoss(),
-            # we reset the last velocity to None
-                # after obtaining impact
-            self.resetVelocityCaching()
+            impact = vel[1]
 
             if impact >= self.getMinImpact():
                 print('hit! %s' % impact)
