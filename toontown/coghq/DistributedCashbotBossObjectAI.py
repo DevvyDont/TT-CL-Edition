@@ -81,24 +81,44 @@ class DistributedCashbotBossObjectAI(DistributedSmoothNodeAI.DistributedSmoothNo
     def d_setObjectState(self, state, avId, craneId):
         self.sendUpdate('setObjectState', [state, avId, craneId])
 
+    def __rejectGrab(self, avId):
+        # Tell the requester to undo its optimistic LocalGrabbed state,
+        # then rebroadcast the authoritative state so every client resyncs.
+        self.sendUpdateToAvatarId(avId, 'rejectGrab', [])
+        if self.state == 'Grabbed':
+            self.d_setObjectState('G', self.avId, self.craneId)
+        elif self.state == 'Dropped':
+            self.d_setObjectState('D', self.avId, self.craneId)
+        elif self.state == 'SlidingFloor':
+            self.d_setObjectState('s', self.avId, 0)
+        elif self.state == 'Free':
+            self.d_setObjectState('F', 0, 0)
+
     def requestGrab(self):
         # A client wants to pick up the object with his magnet.
         avId = self.air.getAvatarIdFromSender()
-    
-        # Cannot grab an object that is already grabbed by another crane!
-        if self.state == 'Grabbed' or self.state == 'LocalGrabbed':
+        craneId, objectId = self.__getCraneAndObject(avId)
+
+        if craneId == 0 or objectId != 0:
+            self.__rejectGrab(avId)
             return
-        
-        if self.state != 'Grabbed' and self.state != 'Off':
-            # Also make sure the client is controlling some crane and
-            # hasn't grabbed some other object already.
-            craneId, objectId = self.__getCraneAndObject(avId)
-            if craneId != 0 and objectId == 0:
-                self.demand('Grabbed', avId, craneId)
+
+        if self.state == 'Grabbed':
+            if self.avId == avId:
                 return
-        
-        # The client can't have it.
-        self.sendUpdateToAvatarId(avId, 'rejectGrab', [])
+            if self.craneId == self.boss.doId:
+                # The boss is wearing this object as a helmet.
+                self.__rejectGrab(avId)
+                return
+            # Snatched from another crane; transfer ownership.
+            self.demand('Grabbed', avId, craneId)
+            return
+
+        if self.state == 'Off':
+            self.__rejectGrab(avId)
+            return
+
+        self.demand('Grabbed', avId, craneId)
 
     def requestDrop(self):
         # The client holding the object has dropped it from his magnet

@@ -265,13 +265,13 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
         return Task.cont
 
     def prepareGrab(self):
-        # Specialized classes will override this method to do
-        # something appropriate when the object is grabbed by a
-        # magnet.
-        pass
+        # Stop applying stale position broadcasts from the previous owner
+        # (especially noticeable at high ping when re-grabbing a dropped object).
+        self.stopSmooth()
+        self.clearSmoothing(1)
 
     def prepareRelease(self):
-        pass
+        self.localControl = False
 
 
         
@@ -316,7 +316,8 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
     def rejectGrab(self):
         # The server tells us we can't have it for whatever reason.
         if self.state == 'LocalGrabbed':
-            self.demand('LocalDropped', self.avId, self.craneId)
+            # Don't enter LocalDropped; that would claim bogus ownership.
+            self.demand('Free')
 
     def d_requestDrop(self):
         self.sendUpdate('requestDrop')
@@ -375,6 +376,8 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
         self.crane = self.cr.doId2do.get(craneId)
         self.localControl = True
 
+        self.stopSmooth()
+        self.clearSmoothing(1)
         self.hideShadows()
         self.prepareGrab()
         self.crane.grabObject(self)
@@ -397,6 +400,8 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
                 # did, in fact, grab this object with the expected
                 # crane; we don't need to do anything else in this
                 # state.
+                self.localControl = (avId == base.localAvatar.doId)
+                self.clearSmoothing(1)
                 return
             else:
                 # Whoops, we had previously grabbed it locally, but it
@@ -408,7 +413,7 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
         self.craneId = craneId
 
         self.crane = self.cr.doId2do.get(craneId)
-        self.localControl = False
+        self.localControl = (avId == base.localAvatar.doId)
 
         # The "crane" might actually be the boss cog himself!  This
         # happens when the boss takes a safe to wear as a helmet.
