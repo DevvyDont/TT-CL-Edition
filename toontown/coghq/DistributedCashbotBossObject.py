@@ -214,6 +214,8 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
             # WHERE we struck and the orientation of the object
             # travelling.
             vel = self.__getApproachVelocity()
+            # Nevermind, we are returning to monke
+            vel = self.getPhysicsObject().getVelocity()
             # Re-express it in the crane's frame, whose +Y axis points from the
             # crane out toward the boss.
             vel = self.crane.root.getRelativeVector(render, vel)
