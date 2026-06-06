@@ -842,13 +842,6 @@ class DistributedCashbotBossCrane(DistributedObject.DistributedObject, FSM.FSM):
         self.notify.debug('__sniffedSomething %d' % doId)
 
         obj = base.cr.doId2do.get(doId)
-        if obj.state == 'Grabbed':
-            return
-  
-        # Spawn protection
-        #if obj.state in ['EmergeA', 'EmergeB']:
-            #return
-        
         if obj and obj.state != 'LocalDropped' and (obj.state != 'Dropped' or obj.craneId != self.doId):
             self.boss.craneStatesDebug(doId=self.doId, content='Sniffed something, held obj %s' % (
                 self.heldObject.getName() if self.heldObject else "Nothing"))
@@ -856,7 +849,7 @@ class DistributedCashbotBossCrane(DistributedObject.DistributedObject, FSM.FSM):
             obj.d_requestGrab()
             # See if we should do anything with this object when sniffing it
             obj.demand('LocalGrabbed', localAvatar.doId, self.doId)
-            self.considerObjectState(obj)
+            #self.considerObjectState(obj)
 
     def considerObjectState(self, obj):
 
@@ -917,19 +910,7 @@ class DistributedCashbotBossCrane(DistributedObject.DistributedObject, FSM.FSM):
         
         p1 = self.bottomLink.node().getPhysicsObject()
         v = render.getRelativeVector(self.bottomLink, p1.getVelocity())
-        #o = obj.physicsObject.getOrientation()
-        #mult = LQuaternionf(-1, -1, -1, -1)
-        #o.multiply(mult)
-        #obj.setH(180)
-        #if isinstance(obj, DistributedCashbotBossSafe.DistributedCashbotBossSafe):
-        #obj.copy.setH(180)
         obj.physicsObject.setVelocity(v * 1.5)
-        #obj.physicsObject.setOrientation(LOrientationf(1, 0, 0, 0))
-        
-        #print("Pre-collision:")
-        #print(obj.getH())
-        #print(obj.physicsObject.getOrientation())
-        #print("")
         
         # This condition is just for sake of the publish, in case we
         # have gotten into some screwy state.  In the dev environment,
