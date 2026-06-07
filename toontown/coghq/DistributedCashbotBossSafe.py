@@ -169,6 +169,8 @@ class DistributedCashbotBossSafe(DistributedCashbotBossObject.DistributedCashbot
     
     def setObjectState(self, state, avId, craneId):
         if state == 'I':
+            if self.isInCraneInteractionState():
+                return
             self.demand('Initial')
         else:
             DistributedCashbotBossObject.DistributedCashbotBossObject.setObjectState(self, state, avId, craneId)
@@ -194,4 +196,6 @@ class DistributedCashbotBossSafe(DistributedCashbotBossObject.DistributedCashbot
             self.unstash()
             
     def move(self, x, y, z, rotation):
+        if self.isInCraneInteractionState():
+            return
         self.setPosHpr(x, y, z, rotation, 0, 0)

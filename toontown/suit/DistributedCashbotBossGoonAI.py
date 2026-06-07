@@ -12,6 +12,12 @@ from . import DistributedGoonAI
 import math
 import random
 
+
+def _getCashbotBossGoonEmergePosHpr(h):
+    x, y, z = ToontownGlobals.CashbotBossBattleThreePosHpr[:3]
+    return x, y, z, h, 0, 0
+
+
 class DistributedCashbotBossGoonAI(DistributedGoonAI.DistributedGoonAI, DistributedCashbotBossObjectAI.DistributedCashbotBossObjectAI):
 
     """ This is a goon that walks around in the Cashbot CFO final
@@ -73,6 +79,8 @@ class DistributedCashbotBossGoonAI(DistributedGoonAI.DistributedGoonAI, Distribu
         self.cTrav = CollisionTraverser('goon')
         self.cQueue = CollisionHandlerQueue()
         self.cTrav.addCollider(self.feelerNodePath, self.cQueue)
+        self.isStunned = 0
+        self._pendingStunRecovery = 0
 
     def _doDebug(self, _=None):
         self.boss.goonStatesDebug(doId=self.doId, content='(Server) state change %s ---> %s' % (self.oldState, self.newState))
@@ -251,13 +259,46 @@ class DistributedCashbotBossGoonAI(DistributedGoonAI.DistributedGoonAI, Distribu
         self.__startWalk()
 
     def __recoverWalk(self, task):
+        if self.state in ('Grabbed', 'Dropped', 'SlidingFloor'):
+            return Task.done
         self.demand('Walk')
         return Task.done
 
+    def __scheduleStunRecovery(self):
+        taskMgr.remove(self.taskName('recovery'))
+        taskMgr.doMethodLater(
+            0.2,
+            self.__doStunRecovery,
+            self.taskName('recovery'))
+
+    def __doStunRecovery(self, task):
+        if self.state in ('Grabbed', 'Dropped', 'SlidingFloor'):
+            self._pendingStunRecovery = 1
+            return Task.done
+        if self.isStunned:
+            self.demand('Recovery')
+        return Task.done
+
+    def __resumeAfterCraneDrop(self):
+        if not self.isStunned:
+            self.demand('Walk')
+            return
+        if self._pendingStunRecovery:
+            self._pendingStunRecovery = 0
+            self.demand('Recovery')
+            return
+        if taskMgr.hasTaskNamed(self.taskName('recovery')):
+            # Overlay/crane stun already has a recovery timer running.
+            return
+        self.demand('Stunned')
+        self.__scheduleStunRecovery()
+
     def doFree(self, task):
         # This method is fired as a do-later when we enter WaitFree.
-        DistributedCashbotBossObjectAI.DistributedCashbotBossObjectAI.doFree(self, task)
-        self.demand('Walk')
+        if not self.isDeleted() and self.state not in ('Grabbed', 'Dropped'):
+            DistributedCashbotBossObjectAI.DistributedCashbotBossObjectAI.doFree(self, task)
+            if self.state == 'Free':
+                self.__resumeAfterCraneDrop()
         return Task.done
         
     
@@ -274,27 +315,42 @@ class DistributedCashbotBossGoonAI(DistributedGoonAI.DistributedGoonAI, Distribu
             return
         if avId not in self.boss.involvedToons:
             return
-        if self.state == 'Stunned' or self.state == 'Grabbed':
-            # Already stunned, or just picked up by a magnet; don't
-            # stun again.
+        if self.state == 'Stunned':
+            return
+        if (self.isStunned and
+                self.state in ('Grabbed', 'Dropped', 'SlidingFloor')):
             return
 
         if self.boss.ruleset.GOONS_DIE_ON_STOMP:
             self.b_destroyGoon()
             self.boss.d_updateGoonKilledBySafe(avId)
             return
-            
+
+        self.isStunned = 1
+
+        if self.state in ('Grabbed', 'Dropped', 'SlidingFloor'):
+            # Stunned while under crane control: keep the drop/grab
+            # physics state and broadcast stun as a visual overlay.
+            self.__stopWalk(pauseTime)
+            self.boss.makeTreasure(self)
+            self.boss.d_updateGoonsStomped(avId)
+            comboTracker = self.boss.comboTrackers[avId]
+            comboTracker.incrementCombo(math.ceil((comboTracker.combo+1.0) / 4.0))
+            self.d_setObjectState('S', 0, 0)
+            self.__scheduleStunRecovery()
+            return
+
         # Stop the goon right where he is.
         self.__stopWalk(pauseTime)
-        
+
         # And it poops out a treasure right there.
         self.boss.makeTreasure(self)
-        
+
         # Update stats and add track combo for points
         self.boss.d_updateGoonsStomped(avId)
         comboTracker = self.boss.comboTrackers[avId]
         comboTracker.incrementCombo(math.ceil((comboTracker.combo+1.0) / 4.0))
-        
+
         DistributedGoonAI.DistributedGoonAI.requestStunned(self, pauseTime)
 
     def getMinImpact(self):
@@ -366,10 +422,13 @@ class DistributedCashbotBossGoonAI(DistributedGoonAI.DistributedGoonAI, Distribu
         # mode.
         taskMgr.remove(self.taskName('recovery'))
         taskMgr.remove(self.taskName('resumeWalk'))
+        taskMgr.remove(self.uniqueName('recoverWalk'))
 
     def enterWalk(self):
         # The goon is prowling about, looking for trouble.
-        
+
+        self.isStunned = 0
+        self._pendingStunRecovery = 0
         self.avId = 0
         self.craneId = 0
         
@@ -387,11 +446,11 @@ class DistributedCashbotBossGoonAI(DistributedGoonAI.DistributedGoonAI, Distribu
         
         h = 0
         dist = 15
-        pos = self.boss.getPos()
+        pos = _getCashbotBossGoonEmergePosHpr(h)
         walkTime = dist / self.velocity
         
-        self.setPosHpr(pos[0], pos[1], pos[2], h, 0, 0)
-        self.d_setPosHpr(pos[0], pos[1], pos[2], h, 0, 0)
+        self.setPosHpr(*pos)
+        self.d_setPosHpr(*pos)
         self.target = self.boss.scene.getRelativePoint(self, Point3(0, dist, 0))
         self.departureTime = globalClock.getFrameTime()
         self.arrivalTime = self.departureTime + walkTime
@@ -414,11 +473,11 @@ class DistributedCashbotBossGoonAI(DistributedGoonAI.DistributedGoonAI, Distribu
         
         h = 180
         dist = 15
-        pos = self.boss.getPos()
+        pos = _getCashbotBossGoonEmergePosHpr(h)
         walkTime = dist / self.velocity
         
-        self.setPosHpr(pos[0], pos[1], pos[2], h, 0, 0)
-        self.d_setPosHpr(pos[0], pos[1], pos[2], h, 0, 0)
+        self.setPosHpr(*pos)
+        self.d_setPosHpr(*pos)
         self.target = self.boss.scene.getRelativePoint(self, Point3(0, dist, 0))
         self.departureTime = globalClock.getFrameTime()
         self.arrivalTime = self.departureTime + walkTime
@@ -441,12 +500,14 @@ class DistributedCashbotBossGoonAI(DistributedGoonAI.DistributedGoonAI, Distribu
         taskMgr.remove(self.taskName('resumeWalk'))
 
     def enterStunned(self):
+        self.isStunned = 1
         self.d_setObjectState('S', 0, 0)
 
     def exitStunned(self):
         taskMgr.remove(self.taskName('recovery'))
 
     def enterRecovery(self):
+        self.isStunned = 0
         self.d_setObjectState('R', 0, 0)
         taskMgr.doMethodLater(2.0, self.__recoverWalk, self.uniqueName('recoverWalk'))
 

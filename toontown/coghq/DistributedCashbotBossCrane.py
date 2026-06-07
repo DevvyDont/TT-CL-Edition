@@ -876,7 +876,7 @@ class DistributedCashbotBossCrane(DistributedObject.DistributedObject, FSM.FSM):
             
         self.__deactivateSniffer()
         
-        obj.wrtReparentTo(self.gripper)
+        NodePath.wrtReparentTo(obj, self.gripper)
         
         if obj.lerpInterval:
             obj.lerpInterval.finish()
@@ -904,7 +904,7 @@ class DistributedCashbotBossCrane(DistributedObject.DistributedObject, FSM.FSM):
         if obj.lerpInterval:
             obj.lerpInterval.finish()
             
-        obj.wrtReparentTo(render)
+        NodePath.wrtReparentTo(obj, render)
         obj.lerpInterval = Parallel(obj.quatInterval(ToontownGlobals.CashbotBossFromMagnetTime, VBase3(obj.getH(), 0, 0), blendType='easeOut'))
         obj.lerpInterval.start()
         

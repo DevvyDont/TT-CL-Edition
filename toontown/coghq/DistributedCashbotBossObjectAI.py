@@ -121,6 +121,7 @@ class DistributedCashbotBossObjectAI(DistributedSmoothNodeAI.DistributedSmoothNo
             self.__rejectGrab(avId)
             return
 
+        self.stopWaitFree()
         self.demand('Grabbed', avId, craneId)
 
     def requestDrop(self):
@@ -151,7 +152,7 @@ class DistributedCashbotBossObjectAI(DistributedSmoothNodeAI.DistributedSmoothNo
         # relinquished all control of it.
         avId = self.air.getAvatarIdFromSender()
         
-        if avId == self.avId:
+        if avId == self.avId and self.state in ('Dropped', 'SlidingFloor'):
             self.setPosHpr(x, y, 0, h, 0, 0)
             self.demand('WaitFree')
 
@@ -192,6 +193,7 @@ class DistributedCashbotBossObjectAI(DistributedSmoothNodeAI.DistributedSmoothNo
     ### FSM States ###
 
     def enterGrabbed(self, avId, craneId):
+        self.stopWaitFree()
         self.avId = avId
         self.craneId = craneId
         self.__setCraneObject(self.craneId, self.doId)
@@ -209,7 +211,8 @@ class DistributedCashbotBossObjectAI(DistributedSmoothNodeAI.DistributedSmoothNo
         self.avId = avId
         self.craneId = craneId
         self.d_setObjectState('D', avId, craneId)
-        self.startWaitFree(5)
+        if self.wantsWatchDrift:
+            self.startWaitFree(5)
 
     def exitDropped(self):
         self.stopWaitFree()

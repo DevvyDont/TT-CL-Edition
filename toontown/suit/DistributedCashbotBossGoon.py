@@ -11,6 +11,12 @@ from toontown.coghq import DistributedCashbotBossObject, CraneLeagueGlobals
 from direct.showbase import PythonUtil
 from . import DistributedGoon
 
+
+def _getCashbotBossGoonEmergePosHpr(h):
+    x, y, z = ToontownGlobals.CashbotBossBattleThreePosHpr[:3]
+    return x, y, z, h, 0, 0
+
+
 class DistributedCashbotBossGoon(DistributedGoon.DistributedGoon, DistributedCashbotBossObject.DistributedCashbotBossObject):
     
     """ This is a goon that walks around in the Cashbot CFO final
@@ -78,6 +84,7 @@ class DistributedCashbotBossGoon(DistributedGoon.DistributedGoon, DistributedCas
         
         self.wiggleTaskName = self.uniqueName('wiggleTask')
         self.wiggleFreeName = self.uniqueName('wiggleFree')
+        self._pendingStunRecovery = 0
         
         self.boss.goons.append(self)
         
@@ -178,6 +185,7 @@ class DistributedCashbotBossGoon(DistributedGoon.DistributedGoon, DistributedCas
 
     def prepareGrab(self):
         DistributedCashbotBossObject.DistributedCashbotBossObject.prepareGrab(self)
+        self.__stopWalk()
         if self.isStunned:
             self.pose('collapse', 48)
             self.grabPos = (0, 0, self.stunGrabZ * self.scale)
@@ -193,6 +201,37 @@ class DistributedCashbotBossGoon(DistributedGoon.DistributedGoon, DistributedCas
                 taskMgr.doMethodLater(self.wiggleFreeTime, self.__wiggleFree, self.wiggleFreeName)
         self.radar.hide()
 
+    def __lerpToGrabPos(self):
+        if not self.crane or self.crane.gripper.isEmpty():
+            return
+        if self.lerpInterval:
+            self.lerpInterval.finish()
+        self.lerpInterval = Parallel(
+            self.posInterval(ToontownGlobals.CashbotBossToMagnetTime, Point3(*self.grabPos)),
+            self.quatInterval(ToontownGlobals.CashbotBossToMagnetTime, VBase3(self.getH(), 0, 0)),
+            self.toMagnetSoundInterval)
+        self.lerpInterval.start()
+
+    def __applyStunOnMagnet(self):
+        # Live goon stunned while already on the magnet: swap to collapse
+        # and re-lerp to the stunned attach point without a full regrab.
+        self.isStunned = 1
+        self.__stopWalk()
+        self.stop()
+        if self.radar:
+            self.radar.hide()
+        if self.animTrack:
+            self.animTrack.finish()
+            self.animTrack = None
+        taskMgr.remove(self.wiggleTaskName)
+        taskMgr.remove(self.wiggleFreeName)
+        if self.crane:
+            self.crane.wiggleMagnet.setHpr(0, 0, 0)
+        self.pose('collapse', 48)
+        self.grabPos = (0, 0, self.stunGrabZ * self.scale)
+        self.__lerpToGrabPos()
+        base.playSfx(self.collapseSound, node=self)
+
     def prepareRelease(self):
         DistributedCashbotBossObject.DistributedCashbotBossObject.prepareRelease(self)
         if self.crane:
@@ -200,20 +239,66 @@ class DistributedCashbotBossGoon(DistributedGoon.DistributedGoon, DistributedCas
         taskMgr.remove(self.wiggleTaskName)
         taskMgr.remove(self.wiggleFreeName)
         self.setPlayRate(self.animMultiplier, 'walk')
+
+    def __applyStunnedOverlay(self, ts=0):
+        # Stunned while grabbed or falling: keep crane physics, swap visuals.
+        self.isStunned = 1
+        self.__stopWalk()
+        if self.radar:
+            self.radar.hide()
+        if self.animTrack:
+            self.animTrack.finish()
+            self.animTrack = None
+
+        if self.state in ('Dropped', 'LocalDropped', 'SlidingFloor'):
+            self.pose('collapse', 48)
+            base.playSfx(self.collapseSound, node=self)
+            return
+
+        if self.state in ('Grabbed', 'LocalGrabbed'):
+            self.__applyStunOnMagnet()
+            return
+
+        if self.state != 'Stunned':
+            self.demand('Stunned', ts)
+
+    def __resumeAfterCraneDrop(self):
+        # Only apply deferred recovery that was blocked during flight.
+        # Stunned/Walk transitions after landing are server-authoritative.
+        if getattr(self, '_pendingStunRecovery', False):
+            self._pendingStunRecovery = False
+            if self.state != 'Recovery':
+                self.demand('Recovery')
         
     ##### Messages To/From The Server #####
 
     def setObjectState(self, state, avId, craneId):
-        self.crane = self.cr.doId2do.get(craneId)
-        if state == 'W':
+        if craneId:
+            self.crane = self.cr.doId2do.get(craneId)
+        if state in ('W', 'a', 'b', 'B'):
+            if self.isInCraneInteractionState():
+                return
+        if state == 'S':
+            if self.isInCraneInteractionState():
+                if not self.isStunned:
+                    self.__applyStunnedOverlay()
+                return
+            if self.isStunned:
+                return
+            if self.state != 'Stunned':
+                self.demand('Stunned')
+        elif state == 'W':
+            if self.isInCraneInteractionState():
+                return
             self.demand('Walk')
         elif state == 'B':
             if self.state != 'Battle':
                 self.demand('Battle')
-        elif state == 'S':
-            if self.state != 'Stunned':
-                self.demand('Stunned')
         elif state == 'R':
+            if self.isInCraneInteractionState():
+                if self.isStunned:
+                    self._pendingStunRecovery = True
+                return
             if self.state != 'Recovery':
                 self.demand('Recovery')
         elif state == 'a':
@@ -242,10 +327,18 @@ class DistributedCashbotBossGoon(DistributedGoon.DistributedGoon, DistributedCas
     def destroyGoon(self):
         if not self.isDead:
             self.playCrushMovie(None, None)
+        self.resetClientBroadcastState()
+        self.isStunned = 0
+        self._pendingStunRecovery = 0
+        taskMgr.remove(self.wiggleTaskName)
+        taskMgr.remove(self.wiggleFreeName)
         self.demand('Off')
         if self in self.boss.goons:
             self.boss.goons.remove(self)
         return
+
+    def __snapToEmergeSpawn(self, h):
+        self._setPosHprLocal(*_getCashbotBossGoonEmergePosHpr(h))
         
     ### FSM States ###
 
@@ -258,6 +351,7 @@ class DistributedCashbotBossGoon(DistributedGoon.DistributedGoon, DistributedCas
         DistributedGoon.DistributedGoon.exitOff(self)
 
     def enterWalk(self, avId = None, ts = 0):
+        self._pendingStunRecovery = 0
         self.startToonDetect()
         self.isStunned = 0
         self.__startWalk()
@@ -271,13 +365,19 @@ class DistributedCashbotBossGoon(DistributedGoon.DistributedGoon, DistributedCas
 
     def enterEmergeA(self):
         # The goon emerges from door a.
+        self.resetClientBroadcastState()
+        self.isStunned = 0
+        self._pendingStunRecovery = 0
         self.undead()
         self.reparentTo(render)
+        self.__snapToEmergeSpawn(0)
         self.stopToonDetect()
         self.boss.doorA.request('open')
         self.radar.hide()
         self.__startWalk()
         self.loop('walk', 0)
+        if self not in self.boss.goons:
+            self.boss.goons.append(self)
 
     def exitEmergeA(self):
         if self.boss.doorA:
@@ -287,13 +387,19 @@ class DistributedCashbotBossGoon(DistributedGoon.DistributedGoon, DistributedCas
 
     def enterEmergeB(self):
         # The goon emerges from door b.
+        self.resetClientBroadcastState()
+        self.isStunned = 0
+        self._pendingStunRecovery = 0
         self.undead()
         self.reparentTo(render)
+        self.__snapToEmergeSpawn(180)
         self.stopToonDetect()
         self.boss.doorB.request('open')
         self.radar.hide()
         self.__startWalk()
         self.loop('walk', 0)
+        if self not in self.boss.goons:
+            self.boss.goons.append(self)
 
     def exitEmergeB(self):
         if self.boss.doorB:
@@ -316,7 +422,16 @@ class DistributedCashbotBossGoon(DistributedGoon.DistributedGoon, DistributedCas
 
     def enterRecovery(self, ts = 0, pauseTime = 0):
         DistributedGoon.DistributedGoon.enterRecovery(self, ts, pauseTime)
+        self.isStunned = 0
         self.unstashCollisions()
+
+    def recoveryDone(self, pauseTime):
+        # Walk after recovery is driven by the server's broadcast W.
+        return Task.done
+
+    def enterFree(self):
+        DistributedCashbotBossObject.DistributedCashbotBossObject.enterFree(self)
+        self.__resumeAfterCraneDrop()
 
     def d_requestWalk(self):
         self.sendUpdate('requestWalk')

@@ -69,6 +69,141 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
     def _doDebug(self, _=None):
         pass
 
+    CRANE_INTERACTION_STATES = (
+        'LocalGrabbed', 'LocalDropped', 'Grabbed', 'Dropped', 'SlidingFloor')
+
+    def isInCraneInteractionState(self):
+        return self.state in self.CRANE_INTERACTION_STATES
+
+    def isInLocalCraneState(self):
+        return self.state in ('LocalGrabbed', 'LocalDropped')
+
+    def _ignoreIncomingSmooth(self):
+        if getattr(self, '_applyingLocalPos', False):
+            return False
+        if self.localControl:
+            return True
+        if self.state in ('LocalGrabbed', 'Grabbed'):
+            return True
+        crane = getattr(self, 'crane', None)
+        if crane and crane.gripper and not crane.gripper.isEmpty():
+            if self.getParent().compareTo(crane.gripper) == 0:
+                return True
+        return False
+
+    def _setPosHprLocal(self, *args):
+        self._applyingLocalPos = True
+        try:
+            NodePath.setPosHpr(self, *args)
+        finally:
+            self._applyingLocalPos = False
+
+    def setPosHpr(self, x, y, z, h, p=0, r=0):
+        if self._ignoreIncomingSmooth():
+            return
+        NodePath.setPosHpr(self, x, y, z, h, p, r)
+
+    def setX(self, x):
+        if self._ignoreIncomingSmooth():
+            return
+        NodePath.setX(self, x)
+
+    def setY(self, y):
+        if self._ignoreIncomingSmooth():
+            return
+        NodePath.setY(self, y)
+
+    def setZ(self, z):
+        if self._ignoreIncomingSmooth():
+            return
+        NodePath.setZ(self, z)
+
+    def setH(self, h):
+        if self._ignoreIncomingSmooth():
+            return
+        NodePath.setH(self, h)
+
+    def setP(self, p):
+        if self._ignoreIncomingSmooth():
+            return
+        NodePath.setP(self, p)
+
+    def setR(self, r):
+        if self._ignoreIncomingSmooth():
+            return
+        NodePath.setR(self, r)
+
+    def b_clearSmoothing(self):
+        self.d_clearSmoothing()
+        self.smoother.clearPositions(0)
+
+    def d_clearSmoothing(self):
+        self.sendUpdate('clearSmoothing', [0])
+
+    def setComponentX(self, x):
+        if self._ignoreIncomingSmooth():
+            return
+        DistributedSmoothNode.DistributedSmoothNode.setComponentX(self, x)
+
+    def setComponentY(self, y):
+        if self._ignoreIncomingSmooth():
+            return
+        DistributedSmoothNode.DistributedSmoothNode.setComponentY(self, y)
+
+    def setComponentZ(self, z):
+        if self._ignoreIncomingSmooth():
+            return
+        DistributedSmoothNode.DistributedSmoothNode.setComponentZ(self, z)
+
+    def setComponentH(self, h):
+        if self._ignoreIncomingSmooth():
+            return
+        DistributedSmoothNode.DistributedSmoothNode.setComponentH(self, h)
+
+    def setComponentP(self, p):
+        if self._ignoreIncomingSmooth():
+            return
+        DistributedSmoothNode.DistributedSmoothNode.setComponentP(self, p)
+
+    def setComponentR(self, r):
+        if self._ignoreIncomingSmooth():
+            return
+        DistributedSmoothNode.DistributedSmoothNode.setComponentR(self, r)
+
+    def setComponentL(self, l):
+        if self._ignoreIncomingSmooth():
+            return
+        DistributedSmoothNode.DistributedSmoothNode.setComponentL(self, l)
+
+    def setComponentT(self, timestamp):
+        if self._ignoreIncomingSmooth():
+            return
+        DistributedSmoothNode.DistributedSmoothNode.setComponentT(self, timestamp)
+
+    def setComponentTLive(self, timestamp):
+        if self._ignoreIncomingSmooth():
+            return
+        DistributedSmoothNode.DistributedSmoothNode.setComponentTLive(self, timestamp)
+
+    def smoothPosition(self):
+        if self._ignoreIncomingSmooth():
+            return
+        DistributedSmoothNode.DistributedSmoothNode.smoothPosition(self)
+
+    def resetClientBroadcastState(self):
+        self.localControl = False
+        self.awaitingGrabConfirm = False
+        self.stopPosHprBroadcast()
+        self.stopSmooth()
+        self.smoother.clearPositions(0)
+        if self.physicsActivated:
+            self.deactivatePhysics()
+        if hasattr(self, 'physicsObject'):
+            self.physicsObject.setVelocity(0, 0, 0)
+        if self.lerpInterval:
+            self.lerpInterval.finish()
+            self.lerpInterval = None
+
     def disable(self):
         self.cleanup()
         self.stopSmooth()
@@ -254,6 +389,9 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
         return 0
 
     def __watchDrift(self, task):
+        if self.state != 'SlidingFloor':
+            return Task.done
+
         # Checks the object for non-zero velocity.  When the velocity
         # reaches zero in the XY plane, we tell the AI we're done
         # moving it around.
@@ -266,10 +404,30 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
         return Task.cont
 
     def prepareGrab(self):
-        # Stop applying stale position broadcasts from the previous owner
-        # (especially noticeable at high ping when re-grabbing a dropped object).
-        self.stopSmooth()
-        self.clearSmoothing(1)
+        # Stop stale posHpr broadcasts from fighting the grab reparent.
+        # At high ping, late setComponent* / setPosHpr from a previous slide
+        # can teleport the object before wrtReparentTo(gripper).
+        self.stopPosHprBroadcast()
+        if self.physicsActivated:
+            self.deactivatePhysics()
+        if hasattr(self, 'physicsObject'):
+            self.physicsObject.setVelocity(0, 0, 0)
+
+        isLocal = (self.avId == base.localAvatar.doId)
+        self.localControl = isLocal
+
+        self._applyingLocalPos = True
+        try:
+            worldMat = self.getTransform(render)
+            NodePath.wrtReparentTo(self, render)
+            self.setTransform(render, worldMat)
+            if isLocal:
+                self.b_clearSmoothing()
+            else:
+                self.stopSmooth()
+                self.b_clearSmoothing()
+        finally:
+            self._applyingLocalPos = False
 
     def prepareRelease(self):
         self.localControl = False
@@ -288,23 +446,71 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
         # associated objects.
         self.boss = base.cr.doId2do[bossCogId]
 
+    def __isPendingGrabFor(self, avId, craneId):
+        return (self.awaitingGrabConfirm and avId == base.localAvatar.doId and
+                craneId == self.craneId)
+
+    def __acknowledgePendingGrab(self, avId, craneId):
+        # Grab confirmed after we already optimistically dropped/slid.
+        self.awaitingGrabConfirm = False
+        self.avId = avId
+        self.craneId = craneId
+        self.localControl = (avId == base.localAvatar.doId)
+        if self.state == 'LocalDropped':
+            self.startPosHprBroadcast()
+        elif self.state == 'Free':
+            self.avId = 0
+            self.craneId = 0
+            self.localControl = False
+
     def setObjectState(self, state, avId, craneId):
+        if self.state == 'Off':
+            return
 
         if state == 'G':
-            if (self.state == 'LocalDropped' and self.awaitingGrabConfirm and
-                    avId == base.localAvatar.doId and craneId == self.craneId):
-                self.localControl = True
+            if self.__isPendingGrabFor(avId, craneId):
+                if self.state in ('LocalDropped', 'SlidingFloor', 'Free'):
+                    self.__acknowledgePendingGrab(avId, craneId)
+                    return
+            if self.state == 'LocalDropped':
+                if avId == base.localAvatar.doId:
+                    # Our own late grab confirm after an optimistic drop.
+                    return
+                # Another player snatched it while we still own the fall locally.
                 self.awaitingGrabConfirm = False
-                self.startPosHprBroadcast()
+                self.demand('Grabbed', avId, craneId)
+                return
+            if self.state in ('SlidingFloor', 'Free') and avId == base.localAvatar.doId:
+                # Already dropped locally; ignore a late grab confirm.
+                return
+            if (self.state == 'Grabbed' and self.avId == avId and
+                    self.craneId == craneId):
                 return
             self.demand('Grabbed', avId, craneId)
         elif state == 'D':
+            if self.state in ('LocalDropped', 'SlidingFloor', 'Free'):
+                return
             if self.state != 'Dropped':
                 self.demand('Dropped', avId, craneId)
         elif state == 's':
+            if self.isInCraneInteractionState():
+                return
             if self.state != 'SlidingFloor':
                 self.demand('SlidingFloor', avId)
         elif state == 'F':
+            if self.isInLocalCraneState():
+                return
+            if self.state in ('LocalGrabbed', 'Grabbed'):
+                return
+            if self.state == 'LocalDropped':
+                return
+            if (self.avId == base.localAvatar.doId and
+                    self.state in ('Dropped', 'SlidingFloor')):
+                if self.wantsWatchDrift:
+                    # Local goon owner transitions to Free via __watchDrift.
+                    return
+                # Safes (wantsWatchDrift=0) stay under local slide control.
+                return
             self.demand('Free')
         else:
             self.notify.error('Invalid state from AI: %s' % state)
@@ -322,7 +528,8 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
 
     def rejectGrab(self):
         # The server tells us we can't have it for whatever reason.
-        if self.state in ('LocalGrabbed', 'LocalDropped'):
+        if (self.state in ('LocalGrabbed', 'LocalDropped', 'SlidingFloor', 'Free') or
+                self.awaitingGrabConfirm):
             self.awaitingGrabConfirm = False
             self.demand('Free')
 
@@ -379,12 +586,10 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
 
         self.crane = self.cr.doId2do.get(craneId)
         self.localControl = True
-
-        self.stopSmooth()
-        self.clearSmoothing(1)
         self.hideShadows()
         self.prepareGrab()
-        self.crane.grabObject(self)
+        if self.crane:
+            self.crane.grabObject(self)
 
     def exitLocalGrabbed(self):
         if self.newState != 'Grabbed':
@@ -405,7 +610,6 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
                 # crane; we don't need to do anything else in this
                 # state.
                 self.localControl = (avId == base.localAvatar.doId)
-                self.clearSmoothing(1)
                 if self.localControl and self.crane and not self.crane.magnetOn:
                     self._grabConfirmedForDrop = True
                     self.demand('LocalDropped', avId, craneId)
@@ -451,6 +655,8 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
             self._grabConfirmedForDrop = False
         else:
             self.awaitingGrabConfirm = (self.oldState == 'LocalGrabbed')
+        if avId == base.localAvatar.doId:
+            self.localControl = True
         self.activatePhysics()
         if not self.awaitingGrabConfirm:
             self.startPosHprBroadcast()
@@ -477,6 +683,7 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
         self.crane = self.cr.doId2do.get(craneId)
 
         if self.avId == base.localAvatar.doId:
+            self.localControl = True
             self.activatePhysics()
             self.startPosHprBroadcast(period=.05)
 
@@ -484,6 +691,7 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
             self.handler.setStaticFrictionCoef(0)
             self.handler.setDynamicFrictionCoef(0)
         else:
+            self.localControl = False
             self.startSmooth()
         self.hideShadows()
 
@@ -510,6 +718,7 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
             self.lerpInterval = None
             
         if self.avId == base.localAvatar.doId:
+            self.localControl = True
             self.activatePhysics()
             self.startPosHprBroadcast(period=.05)
             
@@ -521,6 +730,7 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
             if self.wantsWatchDrift:
                 taskMgr.add(self.__watchDrift, self.watchDriftName)
         else:
+            self.localControl = False
             self.startSmooth()
             
         self.hitFloorSoundInterval.start()
@@ -534,10 +744,10 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
             self.stopSmooth()
 
     def enterFree(self):
-        self.avId = 0
-        self.craneId = 0
+        if not self.awaitingGrabConfirm:
+            self.avId = 0
+            self.craneId = 0
         self.localControl = False
-        self.awaitingGrabConfirm = False
 
     def exitFree(self):
         pass
