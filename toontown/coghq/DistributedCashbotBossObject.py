@@ -61,6 +61,7 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
         # Cranes will fill in this with the interval to lerp the
         # object to the crane.
         self.lerpInterval = None
+        self.awaitingGrabConfirm = False
         
         self.setBroadcastStateChanges(True)
         self.accept(self.getStateChangeEvent(), self._doDebug)
@@ -290,6 +291,12 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
     def setObjectState(self, state, avId, craneId):
 
         if state == 'G':
+            if (self.state == 'LocalDropped' and self.awaitingGrabConfirm and
+                    avId == base.localAvatar.doId and craneId == self.craneId):
+                self.localControl = True
+                self.awaitingGrabConfirm = False
+                self.startPosHprBroadcast()
+                return
             self.demand('Grabbed', avId, craneId)
         elif state == 'D':
             if self.state != 'Dropped':
@@ -315,8 +322,8 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
 
     def rejectGrab(self):
         # The server tells us we can't have it for whatever reason.
-        if self.state == 'LocalGrabbed':
-            # Don't enter LocalDropped; that would claim bogus ownership.
+        if self.state in ('LocalGrabbed', 'LocalDropped'):
+            self.awaitingGrabConfirm = False
             self.demand('Free')
 
     def d_requestDrop(self):
@@ -366,9 +373,6 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
         # will act as if we have grabbed the object successfully, but
         # we have not yet heard confirmation from the AI so we might
         # later discover that we didn't grab it after all.
-
-        # We're not allowed to drop the object directly from this
-        # state.
         
         self.avId = avId
         self.craneId = craneId
@@ -402,6 +406,9 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
                 # state.
                 self.localControl = (avId == base.localAvatar.doId)
                 self.clearSmoothing(1)
+                if self.localControl and self.crane and not self.crane.magnetOn:
+                    self._grabConfirmedForDrop = True
+                    self.demand('LocalDropped', avId, craneId)
                 return
             else:
                 # Whoops, we had previously grabbed it locally, but it
@@ -439,8 +446,14 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
 
         self.crane = self.cr.doId2do.get(craneId)
         
+        if getattr(self, '_grabConfirmedForDrop', False):
+            self.awaitingGrabConfirm = False
+            self._grabConfirmedForDrop = False
+        else:
+            self.awaitingGrabConfirm = (self.oldState == 'LocalGrabbed')
         self.activatePhysics()
-        self.startPosHprBroadcast()
+        if not self.awaitingGrabConfirm:
+            self.startPosHprBroadcast()
         self.hideShadows()
 
         # Set slippery physics so it will slide off the boss.
@@ -524,6 +537,7 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
         self.avId = 0
         self.craneId = 0
         self.localControl = False
+        self.awaitingGrabConfirm = False
 
     def exitFree(self):
         pass

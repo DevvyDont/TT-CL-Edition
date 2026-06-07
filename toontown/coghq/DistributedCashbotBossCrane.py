@@ -939,15 +939,10 @@ class DistributedCashbotBossCrane(DistributedObject.DistributedObject, FSM.FSM):
         if self.heldObject:
             obj = self.heldObject
             obj.d_requestDrop()
-            if (obj.state == 'Grabbed'):
-                # Go ahead and move the local object instance into the
-                # 'LocalDropped' state--presumably the AI will grant our
-                # request shortly anyway, and we can avoid a hitch by
-                # not waiting around for it.  However, we can't do
-                # this if the object is just in 'LocalGrabbed' state,
-                # because we can't start broadcasting updates on the
-                # object's position until we *know* we're the object's
-                # owner.
+            if obj.state in ('Grabbed', 'LocalGrabbed'):
+                # Optimistically enter LocalDropped so the object detaches
+                # immediately.  From LocalGrabbed, position broadcast is
+                # deferred until the AI confirms the grab.
                 obj.demand('LocalDropped', localAvatar.doId, self.doId)
 
         if self.boss:

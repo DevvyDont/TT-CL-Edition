@@ -33,6 +33,7 @@ class DistributedCashbotBossObjectAI(DistributedSmoothNodeAI.DistributedSmoothNo
         self.avId = 0
         self.craneId = 0
         self.isHelmet = False
+        self.pendingDropAvId = 0
         
         self.setBroadcastStateChanges(True)
         self.accept(self.getStateChangeEvent(), self._doDebug)
@@ -84,6 +85,8 @@ class DistributedCashbotBossObjectAI(DistributedSmoothNodeAI.DistributedSmoothNo
     def __rejectGrab(self, avId):
         # Tell the requester to undo its optimistic LocalGrabbed state,
         # then rebroadcast the authoritative state so every client resyncs.
+        if self.pendingDropAvId == avId:
+            self.pendingDropAvId = 0
         self.sendUpdateToAvatarId(avId, 'rejectGrab', [])
         if self.state == 'Grabbed':
             self.d_setObjectState('G', self.avId, self.craneId)
@@ -124,11 +127,16 @@ class DistributedCashbotBossObjectAI(DistributedSmoothNodeAI.DistributedSmoothNo
         # The client holding the object has dropped it from his magnet
         # (but is still controlling its free-fall).
         avId = self.air.getAvatarIdFromSender()
-        
+        craneId, objectId = self.__getCraneAndObject(avId)
+
         if avId == self.avId and self.state == 'Grabbed':
-            craneId, objectId = self.__getCraneAndObject(avId)
             if craneId != 0 and objectId == self.doId:
                 self.demand('Dropped', avId, craneId)
+            return
+
+        # Drop may arrive before grab is confirmed on the AI.
+        if craneId != 0 and objectId in (0, self.doId):
+            self.pendingDropAvId = avId
 
     def hitFloor(self):
         # The client managing the dropping object tells us that it has
@@ -188,6 +196,11 @@ class DistributedCashbotBossObjectAI(DistributedSmoothNodeAI.DistributedSmoothNo
         self.craneId = craneId
         self.__setCraneObject(self.craneId, self.doId)
         self.d_setObjectState('G', avId, craneId)
+        if self.pendingDropAvId == avId:
+            self.pendingDropAvId = 0
+            self.demand('Dropped', avId, craneId)
+        elif self.pendingDropAvId:
+            self.pendingDropAvId = 0
 
     def exitGrabbed(self):
         self.__setCraneObject(self.craneId, 0)
