@@ -140,6 +140,25 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
     def d_clearSmoothing(self):
         self.sendUpdate('clearSmoothing', [0])
 
+    # When a non-owner starts smoothing a freshly dropped object, the
+    # SmoothMover is cold: during the grab the object rode the magnet via a
+    # local lerp, so its own buffer holds no samples.  startSmooth ->
+    # reloadPosition seeds a single sample stamped 'now', but the smoother
+    # plays back at (now - smooth-lag), so for ~smooth-lag seconds it pins to
+    # that one sample with zero velocity -- the object visibly freezes in
+    # mid-air on every drop.  Re-seed the anchor back-dated past the lag so
+    # playback immediately brackets the incoming fall samples and motion
+    # resumes right away.  No prediction is enabled, so there is no
+    # extrapolation/overshoot.
+    SMOOTH_PRIME_BACKDATE = 0.3  # seconds; must exceed smooth-lag (default 0.2)
+
+    def primeDropSmoothing(self):
+        now = globalClock.getFrameTime()
+        self.smoother.clearPositions(0)
+        self.smoother.setPosHpr(self.getPos(), self.getHpr())
+        self.smoother.setTimestamp(now - self.SMOOTH_PRIME_BACKDATE)
+        self.smoother.markPosition()
+
     def setComponentX(self, x):
         if self._ignoreIncomingSmooth():
             return
@@ -457,7 +476,8 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
         self.craneId = craneId
         self.localControl = (avId == base.localAvatar.doId)
         if self.state == 'LocalDropped':
-            self.startPosHprBroadcast()
+            if not self.posHprBroadcastStarted():
+                self.startPosHprBroadcast(period=.05)
         elif self.state == 'Free':
             self.avId = 0
             self.craneId = 0
@@ -658,8 +678,11 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
         if avId == base.localAvatar.doId:
             self.localControl = True
         self.activatePhysics()
-        if not self.awaitingGrabConfirm:
-            self.startPosHprBroadcast()
+        # Broadcast immediately, even while still awaiting grab confirmation.
+        # Deferring it (the old behavior) left the object frozen on remote
+        # clients for a full grab round-trip on a quick grab-then-drop.  If the
+        # grab is ultimately rejected, rejectGrab -> Free stops the broadcast.
+        self.startPosHprBroadcast(period=.05)
         self.hideShadows()
 
         # Set slippery physics so it will slide off the boss.
@@ -693,6 +716,7 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
         else:
             self.localControl = False
             self.startSmooth()
+            self.primeDropSmoothing()
         self.hideShadows()
 
     def exitDropped(self):
@@ -732,6 +756,7 @@ class DistributedCashbotBossObject(DistributedSmoothNode.DistributedSmoothNode, 
         else:
             self.localControl = False
             self.startSmooth()
+            self.primeDropSmoothing()
             
         self.hitFloorSoundInterval.start()
 
